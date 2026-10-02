@@ -42,25 +42,32 @@ th{background:var(--th);color:#fff}
   #map{margin-top:0}
   th,td{padding:6px 5px;font-size:13px}
 }
+.sh{display:none}
 @media (max-width:700px){
-  body{padding:12px}
-  h1{font-size:20px;margin:6px 0 12px}
-  .card{padding:12px}
-  .card label{display:block;margin:8px 0}
-  input,select{font-size:16px;padding:4px}   /* 16px stops iOS zooming on focus */
-  .card input[type=number]{width:72px}
-  .tab{flex:1;padding:10px 6px;font-size:14px}
-  .tabs{flex-wrap:wrap}
-  .scroll{overflow-x:visible}
-  table,thead,tbody,tr,td{display:block;width:auto}
-  thead{display:none}
-  tr{background:var(--card);border:1px solid var(--border);border-radius:10px;margin-bottom:10px;overflow:hidden}
-  td{display:flex;justify-content:space-between;border:0;border-bottom:1px solid var(--border);padding:6px 12px;text-align:right}
-  td:last-child{border-bottom:0}
-  td::before{content:attr(data-label);font-weight:bold;color:inherit;opacity:.65;text-align:left;margin-right:12px}
-  td:first-child{background:var(--th);color:#fff;font-weight:bold;justify-content:flex-start}
-  td:first-child::before{content:none}
-  #map{margin-top:12px;max-height:none}
+  body{padding:8px 10px}
+  h1{font-size:15px;margin:2px 0 6px}
+  .tabs{gap:4px;margin-bottom:6px;flex-wrap:nowrap}
+  .tab{flex:1;padding:7px 2px;font-size:12px;border-radius:6px;white-space:nowrap}
+  .card{padding:8px;margin-bottom:8px;display:grid;grid-template-columns:1fr 1fr;gap:4px 10px;align-items:center}
+  .card label{display:flex;align-items:center;gap:6px;margin:0;font-size:13px;white-space:nowrap}
+  .card .wide{grid-column:1/-1}
+  input,select{font-size:16px;padding:2px 4px}   /* 16px stops iOS zooming on focus */
+  .card input[type=number]{width:56px}
+  .card input[type=text]{width:56px}
+  .warn{padding:6px 10px;font-size:13px;margin-bottom:8px}
+  .layout{display:flex;flex-direction:column}
+  #mapWrap{order:-1}
+  #map{margin-top:0;max-height:max(300px,calc(100dvh - 400px));height:auto}
+  #mapWrap #dlBtn{padding:6px;font-size:12px;margin-top:4px}
+  .scroll{overflow-x:visible;margin-top:8px}
+  table{table-layout:fixed;font-size:11px}
+  th,td{padding:3px 1px;font-size:10.5px;line-height:1.1;white-space:nowrap;overflow:hidden}
+  th{font-size:9.5px}
+  th:first-child,td:first-child{width:19%;text-align:left;padding-left:4px}
+  .lg{display:none}.sh{display:inline}
+  .u{display:none}
+  #vvi{padding:8px;margin-top:8px !important}
+  #vviVal{font-size:26px !important}
 }
 #dlBtn{display:block;width:100%;margin-top:10px;padding:12px;border:0;border-radius:8px;background:var(--th);color:#fff;font-size:15px;cursor:pointer}
 text{font-family:Arial,sans-serif}
@@ -79,7 +86,7 @@ text{font-family:Arial,sans-serif}
 <input type="number" id="rwyHdg" value="154"></label>
 <label id="trafLbl">Traffic:
 <select id="traffic"><option value="-1">Left</option><option value="1">Right</option></select></label>
-<label style="white-space:nowrap"><span id="windTxt">Wind at 1000 ft AGL:</span>
+<label class="wide" style="white-space:nowrap"><span id="windTxt">Wind at 1000 ft AGL:</span>
 <input type="number" id="windDir" value="180">° /
 <input type="number" id="windSpeed" value="10"> kt</label>
 <label id="facLbl" style="display:none">Final approach course:
@@ -96,7 +103,7 @@ text{font-family:Arial,sans-serif}
 <div class="layout">
 <div class="scroll">
 <table>
-<thead id="tHead"><tr><th>Leg</th><th>Track</th><th>KIAS</th><th>WCA</th><th>Corrected Heading</th><th>Groundspeed</th><th>Crosswind</th><th>Head/Tailwind</th></tr></thead>
+<thead id="tHead"><tr><th>Leg</th><th>Track</th><th>KIAS</th><th>WCA</th><th><span class="lg">Corrected Heading</span><span class="sh">HDG</span></th><th><span class="lg">Groundspeed</span><span class="sh">GS</span></th><th><span class="lg">Crosswind</span><span class="sh">XW</span></th><th><span class="lg">Head/Tailwind</span><span class="sh">HW/TW</span></th></tr></thead>
 <tbody id="tableBody"></tbody>
 </table>
 <div class="card" id="vvi" style="display:none;margin-top:20px;text-align:center">
@@ -123,6 +130,7 @@ const airfields = {
   "Final Approach": null  // instrument final approach course calculator
 };
 let airfield="Sheppard";
+const shortLeg={"Outside Downwind":"Outside DW","Inside Downwind":"Inside DW","90 To Initial":"90 to Init","45 To Initial":"45 to Init"};
 const legNames=["Departure","Crosswind","Outside Downwind","90 To Initial","45 To Initial","Inside Downwind"];
 // Build tracks from runway heading H and traffic side s (reproduces the Sheppard 15L/33R tracks)
 function buildPattern(H,s){
@@ -170,10 +178,13 @@ function drawMap(runway,windDir,windSpeed,results,bw){
   const all=[].concat(...geo,rwy);
   const xs=all.map(p=>p[0]),ys=all.map(p=>p[1]);
   const minX=Math.min(...xs),maxX=Math.max(...xs),minY=Math.min(...ys),maxY=Math.max(...ys);
-  const mob=isMobile(), W=mob?480:760, Ht=mob?660:620, m=mob?80:110, f=mob?1.3:1;
+  const mob=isMobile(), W=mob?480:760, Ht=(mob?580:600)-(bw?36:0), f=mob?1.3:1;
+  const top=74, bot=bw?10:46, mx=mob?58:100, my=mob?50:58;     // header band (north + wind), footer band, margins
   if(!bw)svg.setAttribute("viewBox",`0 0 ${W} ${Ht}`);
-  const sc=Math.min((W-2*m)/(maxX-minX||1),(Ht-2*m)/(maxY-minY||1));
-  const ox=W/2-((minX+maxX)/2)*sc, oy=Ht/2+((minY+maxY)/2)*sc;
+  const areaH=Ht-top-bot, cy0=top+areaH/2;
+  const sc=Math.min((W-2*mx)/(maxX-minX||1),(areaH-2*my)/(maxY-minY||1));
+  const ox=W/2-((minX+maxX)/2)*sc, oy=cy0+((minY+maxY)/2)*sc;
+  const fixedRects=[];
   const P=p=>[ox+p[0]*sc, oy-p[1]*sc];
   const cen=P([(minX+maxX)/2,(minY+maxY)/2]);
   const txt="var(--text)";
@@ -200,6 +211,8 @@ function drawMap(runway,windDir,windSpeed,results,bw){
     const tx=(r0[0]+r1[0])/2+ox_/l*16, ty=(r0[1]+r1[1])/2+oy_/l*16+4;
     const anc=ox_/l>0.3?"start":(ox_/l<-0.3?"end":"middle");
     out+=`<text x="${tx}" y="${ty}" text-anchor="${anc}" font-size="13" font-weight="bold" fill="${txt}">RWY ${runway} (${String(Math.round(H)).padStart(3,'0')}°)</text>`;
+    {const w=(`RWY ${runway} (000°)`.length)*7.6, h=(over||caut)?32:18, cx=anc==="start"?tx+w/2:(anc==="end"?tx-w/2:tx);
+     fixedRects.push({x:cx,y:ty-12+h/2,w,h});}
     if(over||caut)out+=`<text x="${tx}" y="${ty+14}" text-anchor="${anc}" font-size="11" font-weight="bold" fill="${over?'#e03131':'#f59f00'}">${over?'⚠ XW LIMIT EXCEEDED':'⚠ XW near limit'}</text>`;
   }
 
@@ -219,34 +232,50 @@ function drawMap(runway,windDir,windSpeed,results,bw){
   const bk=P(toWorld([0,1],H)),pc=P(toWorld([sd*0.8,-0.8],H));
   out+=`<circle cx="${bk[0]}" cy="${bk[1]}" r="4" fill="${colors[5]}"/>`;
   out+=`<circle cx="${pc[0]}" cy="${pc[1]}" r="4" fill="${colors[5]}"/>`;
-  // labels
-  geo.forEach((l,i)=>{
+  // labels: placed beside each leg, then pushed apart and kept inside the map
+  const boxes=geo.map((l,i)=>{
     const a=P(l[0]),b=P(l[1]);
     const tt=[0.5,0.65,0.25,0.5,0.5,0.5][i];
-    let mx=a[0]+(b[0]-a[0])*tt,my=a[1]+(b[1]-a[1])*tt;
-    let dx=b[0]-a[0],dy=b[1]-a[1];const len=Math.hypot(dx,dy)||1;
+    const mx_=a[0]+(b[0]-a[0])*tt,my_=a[1]+(b[1]-a[1])*tt;
+    const dx=b[0]-a[0],dy=b[1]-a[1],len=Math.hypot(dx,dy)||1;
     let nx=-dy/len,ny=dx/len;
     const ref=i===5?P(toWorld([0,1],H)):cen;   // inside downwind: label goes away from runway
-    if((mx-ref[0])*nx+(my-ref[1])*ny<0){nx=-nx;ny=-ny;}
-    const off=i===5?-0:0;
-    const lx=mx+nx*58*f,ly=my+ny*40*f;
-    const r=results[i];
-    out+=`<line x1="${mx}" y1="${my}" x2="${lx-nx*0}" y2="${ly}" stroke="${colors[i]}" stroke-width="1" opacity=".5"/>`;
-    out+=`<rect x="${lx-40*f}" y="${ly-14*f}" width="${80*f}" height="${28*f}" rx="4" fill="var(--lbl)" stroke="${colors[i]}" stroke-width="1.5"/>`;
+    if((mx_-ref[0])*nx+(my_-ref[1])*ny<0){nx=-nx;ny=-ny;}
+    return {i,mx:mx_,my:my_,x:mx_+nx*54*f,y:my_+ny*36*f,w:84*f,h:30*f};
+  });
+  for(let it=0;it<60;it++){
+    boxes.forEach((A,ai)=>{
+      boxes.forEach((B,bi)=>{ if(bi<=ai)return;
+        const dx=B.x-A.x,dy=B.y-A.y,ovx=(A.w+B.w)/2+5-Math.abs(dx),ovy=(A.h+B.h)/2+5-Math.abs(dy);
+        if(ovx>0&&ovy>0){ if(ovx<ovy){const sg=dx>=0?1:-1;A.x-=sg*ovx/2;B.x+=sg*ovx/2;}else{const sg=dy>=0?1:-1;A.y-=sg*ovy/2;B.y+=sg*ovy/2;} }
+      });
+      fixedRects.forEach(R=>{
+        const dx=A.x-R.x,dy=A.y-R.y,ovx=(A.w+R.w)/2+4-Math.abs(dx),ovy=(A.h+R.h)/2+4-Math.abs(dy);
+        if(ovx>0&&ovy>0){ if(ovx<ovy)A.x+=(dx>=0?1:-1)*ovx; else A.y+=(dy>=0?1:-1)*ovy; }
+      });
+      A.x=Math.max(A.w/2+5,Math.min(W-A.w/2-5,A.x));
+      A.y=Math.max(top+A.h/2+4,Math.min(Ht-bot-A.h/2-4,A.y));
+    });
+  }
+  boxes.forEach(A=>{
+    const i=A.i,r=results[i],lx=A.x,ly=A.y;
+    out+=`<line x1="${A.mx}" y1="${A.my}" x2="${lx}" y2="${ly}" stroke="${colors[i]}" stroke-width="1" opacity=".5"/>`;
+    out+=`<rect x="${lx-A.w/2}" y="${ly-A.h/2}" width="${A.w}" height="${A.h}" rx="4" fill="var(--lbl)" stroke="${colors[i]}" stroke-width="1.5"/>`;
     out+=`<text x="${lx}" y="${ly-3*f}" text-anchor="middle" font-size="${8.5*f}" fill="${txt}">${legNames[i]}</text>`;
-    out+=`<text x="${lx}" y="${ly+9*f}" text-anchor="middle" font-size="${12*f}" font-weight="bold" fill="${colors[i]}">HDG ${Math.round(r.heading).toString().padStart(3,"0")}°</text>`;
+    out+=`<text x="${lx}" y="${ly+10*f}" text-anchor="middle" font-size="${12.5*f}" font-weight="bold" fill="${colors[i]}">HDG ${Math.round(r.heading).toString().padStart(3,"0")}°</text>`;
   });
 
-  // north arrow
-  out+=`<g transform="translate(40,60)"><line x1="0" y1="25" x2="0" y2="-20" stroke="${txt}" stroke-width="2.5" marker-end="url(#wah)"/><text x="0" y="-28" text-anchor="middle" font-size="14" font-weight="bold" fill="${txt}">N</text></g>`;
-  // wind arrow (points the way the wind blows toward)
+  // header band: north arrow (left) and wind (right), clear of the pattern and labels
+  out+=`<g transform="translate(34,44)"><line x1="0" y1="22" x2="0" y2="-12" stroke="${txt}" stroke-width="2.5" marker-end="url(#wah)"/><text x="0" y="-22" text-anchor="middle" font-size="14" font-weight="bold" fill="${txt}">N</text></g>`;
   const toDir=(windDir+180)*Math.PI/180;
   const ux=Math.sin(toDir),uy=-Math.cos(toDir);
-  out+=`<g transform="translate(${W-70},${Ht-100})"><circle r="42" fill="none" stroke="var(--border)"/>
-  <line x1="${-ux*32}" y1="${-uy*32}" x2="${ux*32}" y2="${uy*32}" stroke="#0b7285" stroke-width="4" marker-end="url(#wah)"/>
-  <text x="54" y="62" text-anchor="end" font-size="13" fill="${txt}">Wind 1000 AGL: ${String(Math.round(normalize(windDir))).padStart(3,"0")}° / ${windSpeed} kt</text></g>`;
-  out+=`<text x="16" y="${Ht-30}" font-size="11" fill="${txt}" opacity=".75">Schematic, north up, not to scale<tspan dx="16" fill-opacity=".5">/</tspan><tspan dx="16">Headings = track + WCA</tspan></text>`;
-  out+=`<text x="16" y="${Ht-14}" font-size="11" fill="${txt}" opacity=".75">Dashed = break and inside downwind</text>`;
+  out+=`<g transform="translate(${W-44},38)"><circle r="26" fill="none" stroke="var(--border)"/>
+  <line x1="${-ux*19}" y1="${-uy*19}" x2="${ux*19}" y2="${uy*19}" stroke="#0b7285" stroke-width="3.5" marker-end="url(#wah)"/>
+  <text x="-36" y="5" text-anchor="end" font-size="13" fill="${txt}">Wind 1000 AGL: ${String(Math.round(normalize(windDir))).padStart(3,"0")}° / ${windSpeed} kt</text></g>`;
+  if(!bw){
+    out+=`<text x="16" y="${Ht-28}" font-size="11" fill="${txt}" opacity=".75">Schematic, north up, not to scale<tspan dx="16" fill-opacity=".5">/</tspan><tspan dx="16">Headings = track + WCA</tspan></text>`;
+    out+=`<text x="16" y="${Ht-12}" font-size="11" fill="${txt}" opacity=".75">Dashed = break and inside downwind</text>`;
+  }
   if(bw){   // print-friendly: pure black on white, no colour or CSS variables
     out=out.split(colors[0]).join("#000");
     colors.forEach(c=>{out=out.split(c).join("#000");});
@@ -259,8 +288,8 @@ function drawMap(runway,windDir,windSpeed,results,bw){
 
 let lastArgs=null;
 let finalState={fac:90,spd:110,gp:3,r:null,windDir:180,windSpeed:10};
-const PATTERN_HEAD='<tr><th>Leg</th><th>Track</th><th>KIAS</th><th>WCA</th><th>Corrected Heading</th><th>Groundspeed</th><th>Crosswind</th><th>Head/Tailwind</th></tr>';
-const FINAL_HEAD='<tr><th>Leg</th><th>Course</th><th>KIAS</th><th>WCA</th><th>Corrected Heading</th><th>Groundspeed</th><th>Crosswind</th><th>Head/Tailwind</th></tr>';
+const PATTERN_HEAD='<tr><th>Leg</th><th>Track</th><th>KIAS</th><th>WCA</th><th><span class="lg">Corrected Heading</span><span class="sh">HDG</span></th><th><span class="lg">Groundspeed</span><span class="sh">GS</span></th><th><span class="lg">Crosswind</span><span class="sh">XW</span></th><th><span class="lg">Head/Tailwind</span><span class="sh">HW/TW</span></th></tr>';
+const FINAL_HEAD='<tr><th>Leg</th><th>Course</th><th>KIAS</th><th>WCA</th><th><span class="lg">Corrected Heading</span><span class="sh">HDG</span></th><th><span class="lg">Groundspeed</span><span class="sh">GS</span></th><th><span class="lg">Crosswind</span><span class="sh">XW</span></th><th><span class="lg">Head/Tailwind</span><span class="sh">HW/TW</span></th></tr>';
 function updateFinal(){
   const fac=normalize(parseFloat(document.getElementById("fac").value)||0);
   const spd=parseFloat(document.getElementById("apSpeed").value)||110;
@@ -274,11 +303,11 @@ function updateFinal(){
   const tbody=document.getElementById("tableBody");tbody.innerHTML="";
   const tr=document.createElement("tr");
   tr.innerHTML=`
-    <td data-label="Leg">Final approach</td><td data-label="Course">${String(Math.round(fac)).padStart(3,"0")}°</td><td data-label="KIAS">${spd}</td>
+    <td data-label="Leg"><span class="lg">Final approach</span><span class="sh">Final</span></td><td data-label="Course">${String(Math.round(fac)).padStart(3,"0")}°</td><td data-label="KIAS">${spd}</td>
     <td data-label="WCA" class="${r.wca>=0?'good':'bad'}">${r.wca>=0?'+':''}${r.wca.toFixed(1)}°</td>
     <td data-label="Corrected Heading">${r.heading.toFixed(1)}°</td>
     <td data-label="Groundspeed">${r.groundspeed.toFixed(1)}</td>
-    <td data-label="Crosswind">${r.crosswind.toFixed(1)} kt</td>
+    <td data-label="Crosswind">${r.crosswind.toFixed(1)}<span class="u"> kt</span></td>
     <td data-label="Head/Tailwind">${r.headwind>=0?"HW ":"TW "}${Math.abs(r.headwind).toFixed(1)}</td>`;
   tbody.appendChild(tr);
   document.getElementById("vviVal").textContent="-"+(Math.round(r.descent/10)*10)+" ft/min";
@@ -311,11 +340,11 @@ function update(){
     results.push(r);
     const tr=document.createElement("tr");
     tr.innerHTML=`
-      <td data-label="Leg">${leg}</td><td data-label="Track">${track}°</td><td data-label="KIAS">${tas}</td>
+      <td data-label="Leg"><span class="lg">${leg}</span><span class="sh">${shortLeg[leg]||leg}</span></td><td data-label="Track">${track}°</td><td data-label="KIAS">${tas}</td>
       <td data-label="WCA" class="${r.wca>=0?'good':'bad'}">${r.wca>=0?'+':''}${r.wca.toFixed(1)}°</td>
       <td data-label="Corrected Heading">${r.heading.toFixed(1)}°</td>
       <td data-label="Groundspeed">${r.groundspeed.toFixed(1)}</td>
-      <td data-label="Crosswind">${r.crosswind.toFixed(1)} kt</td>
+      <td data-label="Crosswind">${r.crosswind.toFixed(1)}<span class="u"> kt</span></td>
       <td data-label="Head/Tailwind">${r.headwind>=0?"HW ":"TW "}${Math.abs(r.headwind).toFixed(1)}</td>`;
     tbody.appendChild(tr);
   });
