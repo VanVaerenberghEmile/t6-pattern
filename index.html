@@ -66,7 +66,7 @@ th{background:var(--th);color:#fff}
   th:first-child,td:first-child{width:19%;text-align:left;padding-left:4px}
   .lg{display:none}.sh{display:inline}
   .u{display:none}
-  #vvi{padding:8px;margin-top:8px !important}
+  #vvi{display:block;padding:8px;margin-top:8px !important}
   #vviVal{font-size:26px !important}
 }
 #dlBtn{display:block;width:100%;margin-top:10px;padding:12px;border:0;border-radius:8px;background:var(--th);color:#fff;font-size:15px;cursor:pointer}
@@ -93,9 +93,17 @@ text{font-family:Arial,sans-serif}
 <input type="number" id="fac" value="90">°</label>
 <label id="spdLbl" style="display:none">Approach speed:
 <input type="number" id="apSpeed" value="110"> kt</label>
+<label id="hcLbl" style="display:none">Inbound course:
+<input type="number" id="holdCrs" value="360">°</label>
+<label id="hhLbl" style="display:none">Your heading:
+<input type="number" id="holdHdg" value="120">°</label>
+<label id="hdLbl" style="display:none">Turns:
+<select id="holdDir"><option value="1">Right</option><option value="-1">Left</option></select></label>
+<label id="hsLbl" style="display:none">Hold speed:
+<input type="number" id="holdSpd" value="200"> kt</label>
 <label id="gpLbl" style="display:none">Glidepath:
 <input type="number" id="gpAngle" step="0.1" value="3.0">°</label>
-<label style="white-space:nowrap">Crosswind limit:
+<label id="xwLbl" style="white-space:nowrap">Crosswind limit:
 <input type="number" id="xwLimit" value="25"> kt</label>
 </div>
 <div class="warn" id="warn"></div>
@@ -107,7 +115,7 @@ text{font-family:Arial,sans-serif}
 <tbody id="tableBody"></tbody>
 </table>
 <div class="card" id="vvi" style="display:none;margin-top:20px;text-align:center">
-<div style="font-size:13px;opacity:.7">VVI for glidepath</div>
+<div id="vviLbl" style="font-size:13px;opacity:.7">VVI for glidepath</div>
 <div id="vviVal" style="font-size:34px;font-weight:bold;margin:4px 0"></div>
 <div id="vviSub" style="font-size:13px;opacity:.7"></div>
 </div>
@@ -127,7 +135,8 @@ const airfields = {
   "Sheppard":{"15L":{hdg:154,side:-1},"33R":{hdg:334,side:1}},
   "Hacker":  {"17":{hdg:173,side:-1},"35":{hdg:353,side:-1}},
   "General": null,  // any runway: type the designator, heading defaults to number x 10
-  "Final Approach": null  // instrument final approach course calculator
+  "Final Approach": null,  // instrument final approach course calculator
+  "Holding": null          // holding pattern entry
 };
 let airfield="Sheppard";
 const shortLeg={"Outside Downwind":"Outside DW","Inside Downwind":"Inside DW","90 To Initial":"90 to Init","45 To Initial":"45 to Init"};
@@ -290,6 +299,82 @@ let lastArgs=null;
 let finalState={fac:90,spd:110,gp:3,r:null,windDir:180,windSpeed:10};
 const PATTERN_HEAD='<tr><th>Leg</th><th>Track</th><th>KIAS</th><th>WCA</th><th><span class="lg">Corrected Heading</span><span class="sh">HDG</span></th><th><span class="lg">Groundspeed</span><span class="sh">GS</span></th><th><span class="lg">Crosswind</span><span class="sh">XW</span></th><th><span class="lg">Head/Tailwind</span><span class="sh">HW/TW</span></th></tr>';
 const FINAL_HEAD='<tr><th>Leg</th><th>Course</th><th>KIAS</th><th>WCA</th><th><span class="lg">Corrected Heading</span><span class="sh">HDG</span></th><th><span class="lg">Groundspeed</span><span class="sh">GS</span></th><th><span class="lg">Crosswind</span><span class="sh">XW</span></th><th><span class="lg">Head/Tailwind</span><span class="sh">HW/TW</span></th></tr>';
+function brg(n){const p=Math.round(normalize(n));return String(p===0?360:p).padStart(3,"0");}
+function drawHold(hs){
+  const svg=document.getElementById("map");
+  const {I,h,s,rho,type,out}=hs;
+  const mob=isMobile(), W=mob?480:760, Ht=mob?500:560;
+  svg.setAttribute("viewBox",`0 0 ${W} ${Ht}`);
+  const txt="var(--text)", R=Math.round(Ht*0.34), cx=W/2-s*28, cy=Ht/2+10, L=120, rad=28;
+  const pt=(a,r)=>[cx+Math.sin(a*Math.PI/180)*r, cy-Math.cos(a*Math.PI/180)*r];
+  const wedge=(a1,a2,col,on)=>{const pts=[[cx,cy]],n=Math.max(2,Math.ceil(Math.abs(a2-a1)/5));
+    for(let k=0;k<=n;k++)pts.push(pt(a1+(a2-a1)*k/n,R));
+    return `<polygon points="${pts.map(p=>p.join(',')).join(' ')}" fill="${col}" fill-opacity="${on?.38:.09}" stroke="${col}" stroke-opacity=".5" stroke-width="1"/>`;};
+  const C={DIRECT:"#2f9e44",PARALLEL:"#9c36b5",TEARDROP:"#1c7ed6"};
+  let o=`<defs><marker id="hah" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,0L10,5L0,10z" fill="context-stroke"/></marker>
+  <marker id="hac" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,0L10,5L0,10z" fill="#e8590c"/></marker>
+  <marker id="hak" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,0L10,5L0,10z" fill="#0b7285"/></marker></defs>`;
+  // sectors (course-up: the inbound course points up)
+  o+=wedge(s*110,s*290,C.DIRECT,type==="DIRECT")+wedge(0,s*110,C.PARALLEL,type==="PARALLEL")+wedge(-s*70,0,C.TEARDROP,type==="TEARDROP");
+  // 70 degree line and the course line
+  const l1=pt(s*110,R),l2=pt(s*110+180,R);
+  o+=`<line x1="${l1[0]}" y1="${l1[1]}" x2="${l2[0]}" y2="${l2[1]}" stroke="${txt}" stroke-width="1.5" stroke-dasharray="6 5" opacity=".6"/>`;
+  o+=`<line x1="${cx}" y1="${cy-R}" x2="${cx}" y2="${cy+R}" stroke="${txt}" stroke-width="1" stroke-dasharray="2 5" opacity=".5"/>`;
+  // holding pattern
+  const sw=s>0?1:0,x2=cx+s*2*rad;
+  o+=`<path d="M${cx},${cy+L} L${cx},${cy} A${rad},${rad} 0 0 ${sw} ${x2},${cy} L${x2},${cy+L} A${rad},${rad} 0 0 ${sw} ${cx},${cy+L}" fill="none" stroke="${txt}" stroke-width="3"/>`;
+  o+=`<line x1="${cx}" y1="${cy+L*0.55}" x2="${cx}" y2="${cy+L*0.55-1}" stroke="${txt}" stroke-width="3" marker-end="url(#hak)"/>`;
+  o+=`<circle cx="${cx}" cy="${cy}" r="6" fill="${txt}"/>`;
+  const fixLeft=Math.sin(rho*Math.PI/180)>0?false:true;   // approach arrow comes from the left when heading east-ish
+  o+=`<text x="${cx+(fixLeft?-10:10)}" y="${cy+18}" text-anchor="${fixLeft?'end':'start'}" font-size="12" font-weight="bold" fill="${txt}" stroke="var(--map)" stroke-width="3" paint-order="stroke">FIX</text>`;
+  o+=`<text x="${cx-s*8}" y="${cy+L*0.55+4}" text-anchor="${s>0?'end':'start'}" font-size="11" fill="${txt}" stroke="var(--map)" stroke-width="3" paint-order="stroke">IN ${brg(I)}°</text>`;
+  o+=`<text x="${x2+s*8}" y="${cy+L*0.55+4}" text-anchor="${s>0?'start':'end'}" font-size="11" fill="${txt}" stroke="var(--map)" stroke-width="3" paint-order="stroke">OUT ${brg(I+180)}°</text>`;
+  // the aircraft's approach to the fix
+  const dx=Math.sin(rho*Math.PI/180),dy=-Math.cos(rho*Math.PI/180),sx=cx-dx*(R+14),sy=cy-dy*(R+14);
+  o+=`<line x1="${sx}" y1="${sy}" x2="${cx-dx*8}" y2="${cy-dy*8}" stroke="#e8590c" stroke-width="3" marker-end="url(#hac)"/>`;
+  const tx=Math.max(10,Math.min(W-10,sx-dx*10)),ty=Math.max(14,Math.min(Ht-8,sy-dy*10+4));
+  o+=`<text x="${tx}" y="${ty}" text-anchor="${tx<W/2?'start':'end'}" font-size="13" font-weight="bold" fill="#e8590c" stroke="var(--map)" stroke-width="3" paint-order="stroke">HDG ${brg(h)}°</text>`;
+  // sector names
+  [["DIRECT",s*140,.9],["PARALLEL",s*55,.66],["TEARDROP",-s*35,.66]].forEach(([n,a,k])=>{
+    const p=pt(a,R*k),on=(n===type);
+    o+=`<text x="${p[0]}" y="${p[1]+4}" text-anchor="middle" font-size="${on?15:12}" font-weight="${on?'bold':'normal'}" fill="${C[n]}" stroke="var(--map)" stroke-width="3" paint-order="stroke">${n}</text>`;
+  });
+  o+=`<text x="${W/2}" y="30" text-anchor="middle" font-size="20" font-weight="bold" fill="${C[type]}">${type} ENTRY</text>`;
+  o+=`<text x="16" y="${Ht-12}" font-size="11" fill="${txt}" opacity=".75">Course-up: inbound course points up<tspan dx="16" fill-opacity=".5">/</tspan><tspan dx="16">Dashed = 70° line (from the outbound course)</tspan></text>`;
+  svg.innerHTML=o;
+}
+function updateHold(){
+  const g=id=>document.getElementById(id);
+  const I=normalize(parseFloat(g("holdCrs").value)||0), h=normalize(parseFloat(g("holdHdg").value)||0);
+  const s=parseInt(g("holdDir").value)||1, spd=parseFloat(g("holdSpd").value)||200;
+  const windDir=parseFloat(g("windDir").value)||0, windSpeed=parseFloat(g("windSpeed").value)||0;
+  const rho=normalize(h-I), r=normalize(s*rho);        // r = heading relative to the inbound course, mirrored for left turns
+  const type=(r>=110&&r<180)?"TEARDROP":((r>=180&&r<290)?"PARALLEL":"DIRECT");
+  const near=[110,180,290].some(b=>Math.abs(r-b)<=5);
+  const outTrack=normalize(type==="TEARDROP"?I+180-s*30:I+180);
+  const ri=compute(I,spd,windDir,windSpeed), ro=compute(outTrack,spd,windDir,windSpeed);
+  const pad=brg;
+  const turn=s>0?"right":"left", opp=s>0?"left":"right", t="1 min (1½ min above 14,000 ft)";
+  const txt={
+    DIRECT:`Cross the fix, turn ${turn} to heading ${pad(ro.heading)}°, fly outbound ${t}, then turn ${turn} to intercept the inbound course ${pad(I)}°.`,
+    PARALLEL:`Cross the fix, turn to heading ${pad(ro.heading)}° (parallel to the outbound course), fly ${t}, then turn ${turn} (in the direction of the hold) through more than 180° to return to the fix and intercept the inbound course ${pad(I)}°.`,
+    TEARDROP:`Cross the fix, turn to heading ${pad(ro.heading)}° (30° off the outbound course, holding side), fly ${t}, then turn ${turn} to intercept the inbound course ${pad(I)}°.`
+  }[type];
+  g("tHead").innerHTML=FINAL_HEAD;
+  const tb=g("tableBody");tb.innerHTML="";
+  const row=(lg,sh,crs,res)=>{const tr=document.createElement("tr");
+    tr.innerHTML=`<td data-label="Leg"><span class="lg">${lg}</span><span class="sh">${sh}</span></td><td data-label="Course">${pad(crs)}°</td><td data-label="KIAS">${spd}</td>
+    <td data-label="WCA" class="${res.wca>=0?'good':'bad'}">${res.wca>=0?'+':''}${res.wca.toFixed(1)}°</td>
+    <td data-label="Corrected Heading">${res.heading.toFixed(1)}°</td><td data-label="Groundspeed">${res.groundspeed.toFixed(1)}</td>
+    <td data-label="Crosswind">${res.crosswind.toFixed(1)}<span class="u"> kt</span></td>
+    <td data-label="Head/Tailwind">${res.headwind>=0?"HW ":"TW "}${Math.abs(res.headwind).toFixed(1)}</td>`;tb.appendChild(tr);};
+  row("Inbound leg","Inbound",I,ri);
+  row("Outbound ("+type.toLowerCase()+")","Outbound",outTrack,ro);
+  g("vviVal").textContent=type;
+  g("vviSub").textContent=txt+(near?"  (Within 5° of a sector boundary: either entry is acceptable.)":"");
+  g("warn").className="warn";g("warn").textContent="";
+  drawHold({I,h,s,rho,type,out:outTrack});
+}
 function updateFinal(){
   const fac=normalize(parseFloat(document.getElementById("fac").value)||0);
   const spd=parseFloat(document.getElementById("apSpeed").value)||110;
@@ -324,6 +409,7 @@ let lastMobile=isMobile();
 window.addEventListener("resize",()=>{const m=isMobile();if(m!==lastMobile){lastMobile=m;update();}});
 function update(){
   if(airfield==="Final Approach"){updateFinal();return;}
+  if(airfield==="Holding"){updateHold();return;}
   document.getElementById("tHead").innerHTML=PATTERN_HEAD;
   const runway=(airfield==="General")?(document.getElementById("rwyText").value.trim().toUpperCase()||"--"):document.getElementById("runway").value;
   const windDir=parseFloat(document.getElementById("windDir").value)||0;
@@ -368,21 +454,26 @@ function loadGeneral(){
 function loadAirfield(name){
   airfield=name;
   document.querySelectorAll(".tab").forEach(t=>t.classList.toggle("active",t.dataset.af===name));
-  const gen=(name==="General"), fin=(name==="Final Approach");
+  const gen=(name==="General"), fin=(name==="Final Approach"), hold=(name==="Holding");
   const show=(id,on)=>{document.getElementById(id).style.display=on?"":"none";};
-  show("rwySelLbl",!gen&&!fin);show("hdgLbl",gen);show("rwyTextLbl",gen);show("trafLbl",!fin);
+  show("rwySelLbl",!gen&&!fin&&!hold);show("hdgLbl",gen);show("rwyTextLbl",gen);show("trafLbl",!fin&&!hold);
+  show("xwLbl",!hold);
   document.querySelector(".layout").classList.toggle("nomap",fin);
-  show("vvi",fin);
+  show("vvi",fin||hold);
   show("facLbl",fin);show("spdLbl",fin);show("gpLbl",fin);
-  document.getElementById("windTxt").textContent=fin?"Wind on final:":"Wind at 1000 ft AGL:";
-  if(fin){update();return;}
+  ["hcLbl","hhLbl","hdLbl","hsLbl"].forEach(id=>show(id,hold));
+  show("dlBtn",!hold);
+  document.getElementById("windTxt").textContent=fin?"Wind on final:":(hold?"Wind on hold:":"Wind at 1000 ft AGL:");
+  document.getElementById("vviLbl").textContent=fin?"VVI for glidepath":"Hold entry";
+  if(fin||hold){update();return;}
   if(gen){loadGeneral();update();return;}
   document.getElementById("runway").innerHTML=Object.keys(airfields[name]).map(r=>`<option value="${r}">${r}</option>`).join("");
   loadRunway();update();
 }
 document.getElementById("tabs").innerHTML=Object.keys(airfields).map(n=>`<button class="tab" data-af="${n}">${n}</button>`).join("");
 document.querySelectorAll(".tab").forEach(t=>t.addEventListener("click",()=>loadAirfield(t.dataset.af)));
-["fac","apSpeed","gpAngle"].forEach(id=>document.getElementById(id).addEventListener("input",update));
+["fac","apSpeed","gpAngle","holdCrs","holdHdg","holdSpd","holdDir"].forEach(id=>document.getElementById(id).addEventListener("input",update));
+document.getElementById("holdDir").addEventListener("change",update);
 document.getElementById("rwyText").addEventListener("input",()=>{loadGeneral();update();});
 document.getElementById("runway").addEventListener("change",()=>{loadRunway();update();});
 ["rwyHdg","traffic","xwLimit"].forEach(id=>document.getElementById(id).addEventListener("input",update));
